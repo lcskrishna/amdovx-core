@@ -148,6 +148,20 @@ int CVxParamTensor::InitializeIO(vx_context context, vx_graph graph, vx_referenc
 				}
 				else ReportError("ERROR: invalid tensor read option: %s\n", option);
 			}
+	        }
+        	else if(!_stricmp(ioType,"init"))
+        	{ //init syntax : init,<fileName> [binary]
+			m_fileNameRead.assign(RootDirUpdated(fileName));
+			m_fileNameForReadHasIndex = (m_fileNameRead.find("%") != m_fileNameRead.npos) ? true : false;
+			m_readFileIsBinary = true;
+			while (*io_params == ',') {
+				char option[64];
+				io_params = ScanParameters(io_params, ",binary", ",s", option);
+				if (!_stricmp(option, "binary")) {
+					m_readFileIsBinary = true;
+				}
+				else ReportError("ERROR: invalid tensor init option: %s\n", option);
+			}
 		}
 		else if (!_stricmp(ioType, "write"))
 		{ // write request syntax: write,<fileName>[,ascii|binary]
