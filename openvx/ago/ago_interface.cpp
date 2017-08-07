@@ -2047,6 +2047,26 @@ int agoExecuteGraph(AgoGraph * graph)
 				agoPerfProfileEntry(graph, ago_profile_type_wait_end, &node->ref);
 				agoPerfProfileEntry(graph, ago_profile_type_copy_begin, &node->ref);
 				// make sure that all input buffers are synched
+#if ENABLE_OPENCL
+				if (node->akernel->opencl_buffer_access_enable) {
+					for (vx_uint32 i = 0; i < node->paramCount; i++) {
+						AgoData * data = node->paramList[i];
+						if (data && data->opencl_buffer &&
+							(node->parameters[i].direction == VX_INPUT || node->parameters[i].direction == VX_BIDIRECTIONAL))
+						{
+							auto dataToSync = (data->ref.type == VX_TYPE_IMAGE && data->u.img.isROI) ? data->u.img.roiMasterImage : data;
+							if (dataToSync->buffer_sync_flags & (AGO_BUFFER_SYNC_FLAG_DIRTY_BY_NODE | AGO_BUFFER_SYNC_FLAG_DIRTY_BY_COMMIT)) {
+								status = agoDirective((vx_reference)dataToSync, VX_DIRECTIVE_AMD_COPY_TO_OPENCL);
+								if(status != VX_SUCCESS) {
+									agoAddLogEntry((vx_reference)graph, VX_FAILURE, "ERROR: agoDirective(*,VX_DIRECTIVE_AMD_COPY_TO_OPENCL) failed (%d:%s)\n", status, agoEnum2Name(status));
+									return status;
+								}
+							}
+						}
+					}
+				}
+				else
+#endif
 				for (vx_uint32 i = 0; i < node->paramCount; i++) {
 					AgoData * data = node->paramList[i];
 					if (data && (node->parameters[i].direction == VX_INPUT || node->parameters[i].direction == VX_BIDIRECTIONAL)) {
