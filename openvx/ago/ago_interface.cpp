@@ -2047,7 +2047,6 @@ int agoExecuteGraph(AgoGraph * graph)
 				agoPerfProfileEntry(graph, ago_profile_type_wait_end, &node->ref);
 				agoPerfProfileEntry(graph, ago_profile_type_copy_begin, &node->ref);
 				// make sure that all input buffers are synched
-#if ENABLE_OPENCL
 				if (node->akernel->opencl_buffer_access_enable) {
 					for (vx_uint32 i = 0; i < node->paramCount; i++) {
 						AgoData * data = node->paramList[i];
@@ -2065,8 +2064,7 @@ int agoExecuteGraph(AgoGraph * graph)
 						}
 					}
 				}
-				else
-#endif
+				else {
 				for (vx_uint32 i = 0; i < node->paramCount; i++) {
 					AgoData * data = node->paramList[i];
 					if (data && (node->parameters[i].direction == VX_INPUT || node->parameters[i].direction == VX_BIDIRECTIONAL)) {
@@ -2077,9 +2075,23 @@ int agoExecuteGraph(AgoGraph * graph)
 							if (jdata)
 								status = agoDataSyncFromGpuToCpu(graph, node, jdata);
 						}
-						if (status) {
-							agoAddLogEntry((vx_reference)graph, VX_FAILURE, "ERROR: agoDataSyncFromGpuToCpu failed (%d:%s) for node(%s) arg#%d data(%s)\n", status, agoEnum2Name(status), node->akernel->name, i, data->name.c_str());
-							return status;
+					}
+				}
+				else {
+					for (vx_uint32 i = 0; i < node->paramCount; i++) {
+						AgoData * data = node->paramList[i];
+						if (data && (node->parameters[i].direction == VX_INPUT || node->parameters[i].direction == VX_BIDIRECTIONAL)) {
+							auto dataToSync = (data->ref.type == VX_TYPE_IMAGE && data->u.img.isROI) ? data->u.img.roiMasterImage : data;
+							status = agoDataSyncFromGpuToCpu(graph, node, dataToSync);
+							for (vx_uint32 j = 0; !status && j < dataToSync->numChildren; j++) {
+								AgoData * jdata = dataToSync->children[j];
+								if (jdata)
+									status = agoDataSyncFromGpuToCpu(graph, node, jdata);
+							}
+							if (status) {
+								agoAddLogEntry((vx_reference)graph, VX_FAILURE, "ERROR: agoDataSyncFromGpuToCpu failed (%d:%s) for node(%s) arg#%d data(%s)\n", status, agoEnum2Name(status), node->akernel->name, i, data->name.c_str());
+								return status;
+							}
 						}
 					}
 				}

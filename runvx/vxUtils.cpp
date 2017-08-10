@@ -499,22 +499,36 @@ size_t CompareImage(vx_image image, vx_rectangle_t * rectRegion, vx_uint8 * refI
 	return errorPixelCountTotal;
 }
 
+// get image width in bytes from image
+vx_size CalculateImageWidthInBytes(vx_image image)
+{
+	AgoImageFormatDescription format_description;
+	vx_context context = vxGetContext((vx_reference)image);
+	vx_df_image format = VX_DF_IMAGE_VIRT;
+	vx_uint32 width;
+	ERROR_CHECK(vxQueryImage(image, VX_IMAGE_ATTRIBUTE_FORMAT, &format, sizeof(format)));
+	ERROR_CHECK(vxQueryImage(image, VX_IMAGE_WIDTH, &width, sizeof(width)));
+	ERROR_CHECK(vxGetContextImageFormatDescription(context, format, &format_description));
+
+	return ((width * format_description.pixelSizeInBitsNum + format_description.pixelSizeInBitsDenom - 1) / format_description.pixelSizeInBitsDenom + 7) >> 3;
+}
+
 // read image
 int ReadImage(vx_image image, vx_rectangle_t * rectFull, FILE * fp)
 {
-	// get number of planes, image format, and pixel type
-	vx_df_image format = VX_DF_IMAGE_VIRT;
+	// get number of planes, image width in bytes for single plane 
 	vx_size num_planes = 0;
-	ERROR_CHECK(vxQueryImage(image, VX_IMAGE_ATTRIBUTE_FORMAT, &format, sizeof(format)));
 	ERROR_CHECK(vxQueryImage(image, VX_IMAGE_ATTRIBUTE_PLANES, &num_planes, sizeof(num_planes)));
+	vx_size width_in_bytes = (num_planes == 1) ? CalculateImageWidthInBytes(image) : 0;
 	// read all image planes into vx_image and check if EOF has occured while reading
 	bool eofDetected = false;
-	for (vx_uint32 plane = 0; plane < (vx_uint32)num_planes; plane++){
+	for (vx_uint32 plane = 0; plane < (vx_uint32)num_planes; plane++) {
 		vx_imagepatch_addressing_t addr;
 		vx_uint8 * src = NULL;
 		ERROR_CHECK(vxAccessImagePatch(image, rectFull, plane, &addr, (void **)&src, VX_WRITE_ONLY));
 		vx_size width = (addr.dim_x * addr.scale_x) / VX_SCALE_UNITY;
-		vx_size width_in_bytes = (format == VX_DF_IMAGE_U1_AMD) ? ((width + 7) >> 3) : (width * addr.stride_x);
+		if (addr.stride_x != 0)
+			width_in_bytes = (width * addr.stride_x);
 		for (vx_uint32 y = 0; y < addr.dim_y; y += addr.step_y){
 			vx_uint8 *srcp = (vx_uint8 *)vxFormatImagePatchAddress2d(src, 0, y, &addr);
 			if (fread(srcp, 1, width_in_bytes, fp) != width_in_bytes) {
@@ -531,19 +545,19 @@ int ReadImage(vx_image image, vx_rectangle_t * rectFull, FILE * fp)
 // write image
 int WriteImage(vx_image image, vx_rectangle_t * rectFull, FILE * fp)
 {
-	// get number of planes, image format, and pixel type
-	vx_df_image format = VX_DF_IMAGE_VIRT;
+	// get number of planes, image width in bytes for single plane 
 	vx_size num_planes = 0;
-	ERROR_CHECK(vxQueryImage(image, VX_IMAGE_ATTRIBUTE_FORMAT, &format, sizeof(format)));
 	ERROR_CHECK(vxQueryImage(image, VX_IMAGE_ATTRIBUTE_PLANES, &num_planes, sizeof(num_planes)));
+	vx_size width_in_bytes = (num_planes == 1) ? CalculateImageWidthInBytes(image) : 0;
 	// write all image planes from vx_image
 	bool eofDetected = false;
-	for (vx_uint32 plane = 0; plane < (vx_uint32)num_planes; plane++){
+	for (vx_uint32 plane = 0; plane < (vx_uint32)num_planes; plane++) {
 		vx_imagepatch_addressing_t addr;
 		vx_uint8 * src = NULL;
 		ERROR_CHECK(vxAccessImagePatch(image, rectFull, plane, &addr, (void **)&src, VX_READ_ONLY));
 		vx_size width = (addr.dim_x * addr.scale_x) / VX_SCALE_UNITY;
-		vx_size width_in_bytes = (format == VX_DF_IMAGE_U1_AMD) ? ((width + 7) >> 3) : (width * addr.stride_x);
+		if (addr.stride_x != 0)
+			width_in_bytes = (width * addr.stride_x);
 		for (vx_uint32 y = 0; y < addr.dim_y; y += addr.step_y){
 			vx_uint8 *srcp = (vx_uint8 *)vxFormatImagePatchAddress2d(src, 0, y, &addr);
 			fwrite(srcp, 1, width_in_bytes, fp);
@@ -619,52 +633,58 @@ int ReadScalarToString(vx_scalar scalar, char str[])
 	return 0;
 }
 
-//get scalar value from struct types.
-int GetScalarValueForStructTypes(vx_enum type, const char str[], void * value) 
+// get scalar value from struct types.
+int GetScalarValueForStructTypes(vx_enum type, const char str[], void * value)
 {
-	if (type == VX_TYPE_NN_CONV_PARAMS) {
-        	vx_nn_convolution_params_t v;
-        	char* tok = std::strtok((char *)str, ",");
-        	v.padding_x = atoi(tok);
-        	tok = std::strtok(NULL, ",");
-	        v.padding_y = atoi(tok);
-        	tok = std::strtok(NULL, ",");
-	        v.overflow_policy = ovxName2Enum(tok);
-        	tok = std::strtok(NULL, ",");
-	        v.rounding_policy = ovxName2Enum(tok);
-        	tok = std::strtok(NULL, ",");
-	        v.down_scale_size_rounding = ovxName2Enum(tok);
-        	tok = std::strtok(NULL, ",");
-	        v.dilation_x = atoi(tok);
-        	tok = std::strtok(NULL, ",");
-	        v.dilation_y = atoi(tok);
-        	*(vx_nn_convolution_params_t *)value = v;
-    	}
-    	else if (type == VX_TYPE_NN_DECONV_PARAMS) {
-        	vx_nn_deconvolution_params_t v;
-        	char *tok = std::strtok((char *)str, ",");
-	        v.padding_x = atoi(tok);
-	        tok = std::strtok(NULL, ",");
-        	v.padding_y = atoi(tok);
-	        tok = std::strtok(NULL, ",");
-        	v.overflow_policy = ovxName2Enum(tok);
-	        tok = std::strtok(NULL, ",");
-        	v.rounding_policy = ovxName2Enum(tok);
-	        tok = std::strtok(NULL, ",");
-        	v.a_x = atoi(tok);
-	        tok = std::strtok(NULL, ",");
-        	v.a_y = atoi(tok);
-	        *(vx_nn_deconvolution_params_t *)value = v;
-    	}
-    	else if (type == VX_TYPE_NN_ROIPOOL_PARAMS) {
-        	vx_nn_roi_pool_params_t v;
-	        v.pool_type = ovxName2Enum(str);
-        	*(vx_nn_roi_pool_params_t *)value = v;
-    	}
-	else {
+	auto getNextToken = [](const char *& s, char * token, size_t size) -> const char * {
+		size_t i = 0;
+		for (size--; *s && *s != ',' && *s != '}'; s++) {
+			if(i < size)
+				token[i++] = *s;
+		}
+		if(*s == ',' || *s == '}')
+			s++;
+		token[i] = '\0';
+		return token;
+	};
+
+	char token[1024];
+	const char * s = &str[1];
+	if(str[0] != '{') {
+		printf("ERROR: GetScalarValueForStructTypes: string must start with '{'\n");
 		return -1;
 	}
-    	return 0;
+	else if (type == VX_TYPE_NN_CONV_PARAMS) {
+		vx_nn_convolution_params_t v;
+		v.padding_x = atoi(getNextToken(s, token, sizeof(token)));
+		v.padding_y = atoi(getNextToken(s, token, sizeof(token)));
+		v.overflow_policy = ovxName2Enum(getNextToken(s, token, sizeof(token)));
+		v.rounding_policy = ovxName2Enum(getNextToken(s, token, sizeof(token)));
+		v.down_scale_size_rounding = ovxName2Enum(getNextToken(s, token, sizeof(token)));
+		v.dilation_x = atoi(getNextToken(s, token, sizeof(token)));
+		v.dilation_y = atoi(getNextToken(s, token, sizeof(token)));
+		*(vx_nn_convolution_params_t *)value = v;
+	}
+	else if (type == VX_TYPE_NN_DECONV_PARAMS) {
+		vx_nn_deconvolution_params_t v;
+		v.padding_x = atoi(getNextToken(s, token, sizeof(token)));
+		v.padding_y = atoi(getNextToken(s, token, sizeof(token)));
+		v.overflow_policy = ovxName2Enum(getNextToken(s, token, sizeof(token)));
+		v.rounding_policy = ovxName2Enum(getNextToken(s, token, sizeof(token)));
+		v.a_x = atoi(getNextToken(s, token, sizeof(token)));
+		v.a_y = atoi(getNextToken(s, token, sizeof(token)));
+		*(vx_nn_deconvolution_params_t *)value = v;
+	}
+	else if (type == VX_TYPE_NN_ROIPOOL_PARAMS) {
+		vx_nn_roi_pool_params_t v;
+		v.pool_type = ovxName2Enum(getNextToken(s, token, sizeof(token)));
+		*(vx_nn_roi_pool_params_t *)value = v;
+	}
+	else {
+		printf("ERROR: GetScalarValueForStructTypes: unsupported type 0x%08x\n", type);
+		return -1;
+	}
+	return 0;
 }
 
 // get scalar value from string
