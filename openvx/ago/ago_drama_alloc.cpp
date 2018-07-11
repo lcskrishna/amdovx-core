@@ -22,6 +22,7 @@ THE SOFTWARE.
 
 
 #include "ago_internal.h"
+#include <iostream>
 
 static int agoOptimizeDramaAllocRemoveUnusedData(AgoGraph * agraph)
 {
@@ -226,6 +227,15 @@ int agoGpuOclAllocBuffers(AgoGraph * graph)
 			Gd[bestj].push_back(data);
 		}
 	}
+
+    for (int count = 0; count < Gd.size() ; count++) {
+        std::cout << "INFO: group after adding alias elements " << count << " has " << Gd[count].size() << " elements" << std::endl;
+        for(int count_in = 0; count_in < Gd[count].size(); count_in++) {
+            std::cout << "===> Element is : " <<   Gd[count][count_in] << std::endl;
+        }
+    }
+    std::cout << "Finished getting group data after alias data added into groups." << std::endl;
+
 	for (AgoData * data : D) {
 		size_t bestj = INT_MAX, bestCost = INT_MAX;
 		if (!(bufferMergeFlags & 1)) {

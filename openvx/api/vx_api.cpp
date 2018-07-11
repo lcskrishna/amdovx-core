@@ -22,6 +22,7 @@ THE SOFTWARE.
 
 
 #include "ago_internal.h"
+#include <iostream>
 
 static inline vx_uint32 vxComputePatchOffset(vx_uint32 x, vx_uint32 y, const vx_imagepatch_addressing_t *addr)
 {
@@ -7675,6 +7676,7 @@ VX_API_ENTRY vx_status VX_API_CALL vxAliasTensor(vx_tensor tensorMaster, vx_size
 		data->alias_data = dataMaster;
 		data->alias_offset = offset;
 		status = VX_SUCCESS;
+        
 	}
 	return status;
 }
